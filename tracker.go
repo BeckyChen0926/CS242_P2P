@@ -5,7 +5,6 @@ import (
 	"log"
 	"math/rand"
 	"net"
-	"reflect"
 )
 
 type Peer struct {
@@ -26,8 +25,12 @@ func registerPeer(peerCon net.Conn) {
 	var neighbors []Peer
 	var chunks []string
 
+	newPeer := Peer{peerCon, peerIP, neighbors, chunks}
+
 	// append the IPaddr of the peer into peerList
-	peerList = append(peerList, Peer{peerCon, peerIP, neighbors, chunks})
+	peerList = append(peerList, newPeer)
+	// assign up to 10 new neighbors
+	giveNewNeighbors(newPeer)
 
 }
 
@@ -36,36 +39,27 @@ func giveNewNeighbors(p Peer) {
 	if len(peerList) > 10 {
 
 		// TODO: how to get 10 unique neighbors w/o duplication
+		// i think this will do?
 
-		var randNeighbors []Peer
-		for i := 0; i < 10; i++ {
+		var neighborCount int
+
+		// loop until have 10 new neighbors
+		for neighborCount < 10 {
 			// Generate a random integer between 0 and n
 			randomInt := rand.Intn(len(peerList))
 			randNeighbor := peerList[randomInt]
 
-			randNeighbors = append(randNeighbors, randNeighbor)
-
 			for j := 0; j < len(p.neighbors); j++ {
-				if reflect.DeepEqual(randNeighbor, p.neighbors[j]) {
-					randomInt = rand.Intn(len(peerList))
-					randNeighbor = peerList[randomInt]
+
+				// if duplicate, skip and do the next loop
+				if randNeighbor.IPAddr.Equal(p.neighbors[j].IPAddr) || randNeighbor.IPAddr.Equal((p.IPAddr)) {
+					continue
 				}
 			}
 
-			// things := []string{"foo", "bar", "baz"}
-			// slices.Contains(p.neighbors., randNeighbor) // true
+			p.neighbors = append(p.neighbors, randNeighbor)
+			neighborCount++
 
-			// for strings.Contains(p.neighbors, randNeighbor) {
-			// 	randomInt := rand.Intn(len(peerList))
-			// 	randNeighbor := peerList[randomInt]
-
-			// }
-
-			// add the 10 new neighbors to p's neighborList
-			for i := 0; i < 10; i++ {
-				p.neighbors = append(p.neighbors, randNeighbors[i])
-
-			}
 		}
 
 	} else {
@@ -79,7 +73,8 @@ func removePeer(p Peer) {
 	//Removes desired peer from the peerlist
 	var newPeerList []Peer
 	for i := 0; i < len(peerList); i++ {
-		if !reflect.DeepEqual(p, peerList[i]) {
+		// i think we can also just check if their ipaddr are equal?
+		if !peerList[i].IPAddr.Equal(p.IPAddr) {
 			newPeerList = append(newPeerList, peerList[i])
 		}
 	}

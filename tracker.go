@@ -5,26 +5,15 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"reflect"
 )
 
-// func handleConnection(conn net.Conn) {
-// 	defer conn.Close()
-// 	buf := make([]byte, 1024)
-// 	for {
-// 		n, err := conn.Read(buf)
-// 		if err != nil {
-// 			log.Println(err)
-// 			return
-// 		}
-// 		fmt.Printf("Received: %s", string(buf[:n]))
-// 		data := strings.ToUpper(string(buf[:n]))
-// 		_, err = conn.Write([]byte(data))
-// 		if err != nil {
-// 			log.Println(err)
-// 			return
-// 		}
-// 	}
-// }
+type Peer struct {
+	conn      net.Conn
+	IPAddr    net.IP
+	neighbors []Peer
+	chunks    []string //chunks that the peer now has. TODO: find write type
+}
 
 // initiate new list to store all peers in the network
 var peerList []Peer
@@ -35,9 +24,10 @@ func registerPeer(peerCon net.Conn) {
 	peerIP := net.ParseIP(peerCon.RemoteAddr().String())
 
 	var neighbors []Peer
+	var chunks []string
 
 	// append the IPaddr of the peer into peerList
-	peerList = append(peerList, Peer{peerCon, peerIP, neighbors})
+	peerList = append(peerList, Peer{peerCon, peerIP, neighbors, chunks})
 
 }
 
@@ -55,12 +45,12 @@ func giveNewNeighbors(p Peer) {
 
 			randNeighbors = append(randNeighbors, randNeighbor)
 
-			// for j := 0; j < len(p.neighbors); j++ {
-			// 	if reflect.DeepEqual(randNeighbor, p.neighbors[j]) {
-			// 		randomInt = rand.Intn(len(peerList))
-			// 		randNeighbor = peerList[randomInt]
-			// 	}
-			// }
+			for j := 0; j < len(p.neighbors); j++ {
+				if reflect.DeepEqual(randNeighbor, p.neighbors[j]) {
+					randomInt = rand.Intn(len(peerList))
+					randNeighbor = peerList[randomInt]
+				}
+			}
 
 			// things := []string{"foo", "bar", "baz"}
 			// slices.Contains(p.neighbors., randNeighbor) // true
@@ -70,8 +60,12 @@ func giveNewNeighbors(p Peer) {
 			// 	randNeighbor := peerList[randomInt]
 
 			// }
-			// p.neighbors = append(p.neighbors, peerList[randomInt])
 
+			// add the 10 new neighbors to p's neighborList
+			for i := 0; i < 10; i++ {
+				p.neighbors = append(p.neighbors, randNeighbors[i])
+
+			}
 		}
 
 	} else {
@@ -80,9 +74,16 @@ func giveNewNeighbors(p Peer) {
 
 }
 
+// remove peer p who is leaving
 func removePeer(p Peer) {
 	//Removes desired peer from the peerlist
-
+	var newPeerList []Peer
+	for i := 0; i < len(peerList); i++ {
+		if !reflect.DeepEqual(p, peerList[i]) {
+			newPeerList = append(newPeerList, peerList[i])
+		}
+	}
+	peerList = newPeerList
 }
 
 func main() {

@@ -68,17 +68,45 @@ func giveNewNeighbors(p Peer) {
 
 }
 
-// remove peer p who is leaving
-func removePeer(p Peer) {
+// remove peer p with pConn who is leaving
+func removePeer(pConn net.Conn) {
 	//Removes desired peer from the peerlist
 	var newPeerList []Peer
 	for i := 0; i < len(peerList); i++ {
-		// i think we can also just check if their ipaddr are equal?
-		if !peerList[i].IPAddr.Equal(p.IPAddr) {
+		// check if the conns are equal
+		if peerList[i].conn.RemoteAddr().String() != pConn.RemoteAddr().String() {
 			newPeerList = append(newPeerList, peerList[i])
 		}
 	}
 	peerList = newPeerList
+}
+
+func handlePeerRequest(pConn net.Conn) {
+	defer pConn.Close()
+	// listens for message + peer's ip? from the peer msg
+
+	// peer would send msg saying 'i wanna leave' + their ipaddr
+
+	buf := make([]byte, 1024)
+	for {
+		n, err := pConn.Read(buf) //n = 'i wanna leave'
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		fmt.Printf("Received: %s", string(buf[:n]))
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		if string(buf[:n]) == "i wanna leave" {
+			removePeer(pConn)
+			fmt.Printf("Left: %s", pConn.RemoteAddr())
+
+		}
+
+	}
+
 }
 
 func main() {
@@ -92,11 +120,13 @@ func main() {
 	}
 	defer ln.Close()
 	fmt.Println("Listening on port 8000")
+
 	for {
 		peer, err := ln.Accept()
 		if err != nil {
 			log.Fatal(err)
 		}
-		go registerPeer(peer)
+		go handlePeerRequest(peer)
+		registerPeer(peer)
 	}
 }

@@ -12,6 +12,7 @@ type Peer struct {
 	IPAddr    net.IP
 	neighbors []Peer
 	chunks    []string //chunks that the peer now has. TODO: find write type
+	// MAKE PEER ID's instead
 }
 
 // initiate new list to store all peers in the network
@@ -126,7 +127,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		go handlePeerRequest(peer)
 		registerPeer(peer)
+		go handlePeerRequest(peer)
 	}
 }

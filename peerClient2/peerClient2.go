@@ -1,4 +1,5 @@
 // becky version for testing peerServer
+// for testing
 
 package main
 
@@ -32,7 +33,6 @@ func registerWithTracker(trackerAddr string) {
 	defer conn.Close()
 
 	// Send registration message with chunks
-	// TODO: maybe change to send ipaddr + port or something else
 	chunks := strings.Join(self.chunks, ",")
 	fmt.Fprintf(conn, "REGISTER %s\n", chunks)
 
@@ -107,18 +107,18 @@ func main() {
 		chunks:    []string{"3"}, // mock chunks this neighbor has
 	}
 
-	mockNeighbor3 := Peer{
+	mockNeighbor2 := Peer{
 		// conn:      nil,
-		IPAddr:    net.ParseIP("127.0.0.3"),
+		IPAddr:    net.ParseIP("127.0.0.2"),
+		chunks:    []string{"1"},
 		neighbors: []Peer{},
-		chunks:    []string{"3", "2"},
 	}
 
 	// Initialize self
 	self = Peer{
-		IPAddr:    net.ParseIP("127.0.0.2"),
-		chunks:    []string{"1"},
-		neighbors: []Peer{mockNeighbor4, mockNeighbor3},
+		IPAddr:    net.ParseIP("127.0.0.3"),
+		neighbors: []Peer{mockNeighbor4, mockNeighbor2},
+		chunks:    []string{"3", "2"},
 	}
 
 	// Register with tracker
@@ -127,7 +127,6 @@ func main() {
 
 	port := ":8004"
 	// this should be where it established TCP conn to all it's assigned neighbors
-	// TODO: neighbor is hard coded for now
 	conn, err := net.Dial("tcp", "127.0.0.4"+port)
 	if err != nil {
 		log.Fatal(err)

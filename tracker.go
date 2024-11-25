@@ -5,111 +5,122 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"strings"
 )
 
+// Peer structure for maintaining peer information
 type Peer struct {
-	conn      net.Conn
 	IPAddr    net.IP
 	neighbors []Peer
-	chunks    []string //chunks that the peer now has. TODO: find write type
-	// MAKE PEER ID's instead
+	chunks    []string
 }
 
-// initiate new list to store all peers in the network
+// Peer list and mutex for concurrency safety
 var peerList []Peer
 
-func registerPeer(peerCon net.Conn) {
+// var peerListMutex sync.Mutex
 
-	// of type IP
-	peerIP := net.ParseIP(peerCon.RemoteAddr().String())
+// Register a new peer
+func registerPeer(ipAddr net.IP, chunks []string) Peer {
+	// peerListMutex.Lock()
+	// defer peerListMutex.Unlock()
 
-	var neighbors []Peer
-	var chunks []string
-
-	newPeer := Peer{peerCon, peerIP, neighbors, chunks}
-
-	// append the IPaddr of the peer into peerList
+	// Create the new peer and add to the list
+	newPeer := Peer{
+		IPAddr:    ipAddr,
+		neighbors: []Peer{},
+		chunks:    chunks,
+	}
 	peerList = append(peerList, newPeer)
-	// assign up to 10 new neighbors
-	giveNewNeighbors(newPeer)
+	fmt.Printf("Peerlist: %v\n", peerList)
 
+	// Assign neighbors
+	assignNeighbors(&newPeer)
+
+	return newPeer
 }
 
-// assign up to 10 neighbors to p
-func giveNewNeighbors(p Peer) {
-	if len(peerList) > 10 {
-
-		// TODO: how to get 10 unique neighbors w/o duplication
-		// i think this will do?
-
-		var neighborCount int
-
-		// loop until have 10 new neighbors
-		for neighborCount < 10 {
-			// Generate a random integer between 0 and n
-			randomInt := rand.Intn(len(peerList))
-			randNeighbor := peerList[randomInt]
-
-			for j := 0; j < len(p.neighbors); j++ {
-
-				// if duplicate, skip and do the next loop
-				if randNeighbor.IPAddr.Equal(p.neighbors[j].IPAddr) || randNeighbor.IPAddr.Equal((p.IPAddr)) {
-					continue
-				}
-			}
-
-			p.neighbors = append(p.neighbors, randNeighbor)
-			neighborCount++
-
-		}
-
-	} else {
-		p.neighbors = peerList
+// Assign up to 10 unique neighbors to the peer
+func assignNeighbors(p *Peer) {
+	if len(peerList) <= 1 {
+		return // No neighbors to assign if only one peer exists
 	}
 
+	neighborCount := 0
+	neighborSet := make(map[string]bool)
+
+	for neighborCount < 10 && neighborCount < len(peerList)-1 {
+		randomIdx := rand.Intn(len(peerList))
+		randomNeighbor := peerList[randomIdx]
+
+		// Avoid self and duplicate neighbors
+		if randomNeighbor.IPAddr.Equal(p.IPAddr) || neighborSet[randomNeighbor.IPAddr.String()] {
+			continue
+		}
+
+		p.neighbors = append(p.neighbors, randomNeighbor)
+		neighborSet[randomNeighbor.IPAddr.String()] = true
+		neighborCount++
+	}
 }
 
-// remove peer p with pConn who is leaving
-func removePeer(pConn net.Conn) {
-	//Removes desired peer from the peerlist
-	var newPeerList []Peer
-	for i := 0; i < len(peerList); i++ {
-		// check if the conns are equal
-		if peerList[i].conn.RemoteAddr().String() != pConn.RemoteAddr().String() {
-			newPeerList = append(newPeerList, peerList[i])
+// Handle incoming requests from peers
+func handlePeerRequest(conn net.Conn) {
+	defer conn.Close()
+	buf := make([]byte, 1024)
+
+	for {
+		n, err := conn.Read(buf)
+		if err != nil {
+			log.Println("Error reading from connection:", err)
+			return
+		}
+
+		message := strings.TrimSpace(string(buf[:n]))
+		fmt.Printf("Received: %s\n", message)
+
+		if strings.HasPrefix(message, "REGISTER") {
+			// Register the peer
+			args := strings.Split(message, " ")
+			if len(args) < 2 {
+				log.Println("Invalid REGISTER message")
+				return
+			}
+			peerIP := net.ParseIP(conn.RemoteAddr().String())
+			chunks := strings.Split(args[1], ",")
+			newPeer := registerPeer(peerIP, chunks)
+
+			// Respond with neighbors
+			neighborIPs := []string{}
+			for _, neighbor := range newPeer.neighbors {
+				neighborIPs = append(neighborIPs, neighbor.IPAddr.String())
+			}
+			response := fmt.Sprintf("REGISTERED NEIGHBORS: %s\n", strings.Join(neighborIPs, ","))
+			conn.Write([]byte(response))
+		} else if message == "LEAVE" { //TODO: need some code in client and server upon message in terminal
+			removePeer(conn)
+			fmt.Printf("Peer left: %s\n", conn.RemoteAddr())
+		} else {
+			log.Println("Unknown message:", message)
+		}
+	}
+}
+
+// Remove a peer from the peer list
+func removePeer(conn net.Conn) {
+	// peerListMutex.Lock()
+	// defer peerListMutex.Unlock()
+
+	newPeerList := []Peer{}
+	for _, peer := range peerList {
+		if peer.IPAddr.String() != conn.RemoteAddr().String() {
+			newPeerList = append(newPeerList, peer)
 		}
 	}
 	peerList = newPeerList
 }
 
-func handlePeerRequest(pConn net.Conn) {
-	defer pConn.Close()
-	// listens for message + peer's ip? from the peer msg
-
-	// peer would send msg saying 'i wanna leave' + their ipaddr
-
-	buf := make([]byte, 1024)
-	for {
-		n, err := pConn.Read(buf) //n = 'i wanna leave'
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		fmt.Printf("Received: %s", string(buf[:n]))
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		if string(buf[:n]) == "i wanna leave" {
-			removePeer(pConn)
-			fmt.Printf("Left: %s", pConn.RemoteAddr())
-
-		}
-
-	}
-
-}
-
+// Main function
 func main() {
 	addr, err := net.ResolveTCPAddr("tcp", ":8000")
 	if err != nil {
@@ -120,14 +131,14 @@ func main() {
 		log.Fatal(err)
 	}
 	defer ln.Close()
-	fmt.Println("Listening on port 8000")
+	fmt.Println("Tracker is listening on port 8000")
 
 	for {
-		peer, err := ln.Accept()
+		conn, err := ln.Accept()
 		if err != nil {
-			log.Fatal(err)
+			log.Println("Error accepting connection:", err)
+			continue
 		}
-		registerPeer(peer)
-		go handlePeerRequest(peer)
+		go handlePeerRequest(conn)
 	}
 }

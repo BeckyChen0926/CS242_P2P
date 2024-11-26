@@ -15,15 +15,11 @@ type Peer struct {
 	chunks    []string
 }
 
-// Peer list and mutex for concurrency safety
+// Peer list that keeps every peer in the network
 var peerList []Peer
-
-// var peerListMutex sync.Mutex
 
 // Register a new peer
 func registerPeer(ipAddr net.IP, chunks []string) Peer {
-	// peerListMutex.Lock()
-	// defer peerListMutex.Unlock()
 
 	// Create the new peer and add to the list
 	newPeer := Peer{
@@ -39,6 +35,13 @@ func registerPeer(ipAddr net.IP, chunks []string) Peer {
 
 	return newPeer
 }
+
+/*
+   NOTE:
+   We have not implemented the functionality to assign new neigbors for every peer in intervals of 30 seconds.
+   Our plan is to give each peer a new neighborhood to allow a peer to access more chunks.
+   This will be implemented by creating a timer and calling assignNeighbors() below for each peer per interval.
+*/
 
 // Assign up to 10 unique neighbors to the peer
 func assignNeighbors(p *Peer) {
@@ -64,7 +67,7 @@ func assignNeighbors(p *Peer) {
 	}
 }
 
-// Handle incoming requests from peers
+// Handle incoming requests from peers requesting to connect
 func handlePeerRequest(conn net.Conn) {
 	defer conn.Close()
 	buf := make([]byte, 1024)
@@ -98,19 +101,23 @@ func handlePeerRequest(conn net.Conn) {
 			response := fmt.Sprintf("REGISTERED NEIGHBORS: %s\n", strings.Join(neighborIPs, ","))
 			conn.Write([]byte(response))
 		} else if message == "LEAVE" { //TODO: need some code in client and server upon message in terminal
+			/*
+				NOTE:
+
+				we don't have the implementation for request to leave yet. Theoritically a peer would send over the
+				connection for LEAVE message and just leave. Tracker will handle remove peer from the peer list to
+				avoid mistaking it as alive.
+			*/
 			removePeer(conn)
 			fmt.Printf("Peer left: %s\n", conn.RemoteAddr())
 		} else {
-			log.Println("Unknown message:", message)
+			log.Println("message:", message)
 		}
 	}
 }
 
 // Remove a peer from the peer list
 func removePeer(conn net.Conn) {
-	// peerListMutex.Lock()
-	// defer peerListMutex.Unlock()
-
 	newPeerList := []Peer{}
 	for _, peer := range peerList {
 		if peer.IPAddr.String() != conn.RemoteAddr().String() {
@@ -120,7 +127,6 @@ func removePeer(conn net.Conn) {
 	peerList = newPeerList
 }
 
-// Main function
 func main() {
 	addr, err := net.ResolveTCPAddr("tcp", ":8000")
 	if err != nil {
@@ -139,6 +145,7 @@ func main() {
 			log.Println("Error accepting connection:", err)
 			continue
 		}
+		// start a new go routine for each incoming peer
 		go handlePeerRequest(conn)
 	}
 }

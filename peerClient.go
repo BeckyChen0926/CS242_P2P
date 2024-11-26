@@ -13,12 +13,10 @@ import (
 
 // Peer structure for maintaining peer information
 type Peer struct {
-	conn      net.Conn //tbh i don't think we need to initiate conn... it's the connection to this Peer
+	conn      net.Conn //TODO: tbh i don't think we need to initiate conn... it's the connection to this Peer
 	IPAddr    net.IP
 	neighbors []Peer
-	chunks    []string //chunks that the peer now has. TODO: find write type
-	// MAKE PEER ID's instead
-	// peer only keeping the name of chunk file now i suppose... where is it keeping the actual file??
+	chunks    []string
 }
 
 var self Peer
@@ -98,6 +96,27 @@ func downloadChunk(conn net.Conn, chunkName string) {
 
 	fmt.Printf("Chunk '%s' downloaded and saved to %s\n", chunkName, filePath)
 }
+
+/*
+	NOTE:
+
+
+	Our peer is currently only able to connect to and get chunks from one neighbor at a time because of our port configuration.
+	We plan to implement something similar to the below code, which will create TCP connections with multiple peers.
+	This functionality was not able to be tested quite yet, but we plan to incorporate it soon.
+
+
+	numNeighbors := 5
+	ports:= [numNeighbors]string{":8000",":8001", ":8002", ":8003", ":8004"}
+	for i := 0 ; i < numNeighbors ; i++{
+		conn, err := net.Dial("tcp", port)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+
+*/
 
 func main() {
 

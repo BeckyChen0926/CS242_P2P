@@ -12,17 +12,13 @@ type Peer struct {
 	conn      net.Conn
 	IPAddr    net.IP
 	neighbors []Peer
-	chunks    []string //chunks that the peer now has. TODO: find write type
-	// MAKE PEER ID's instead
-	// peer only keeping the name of chunk file now i suppose... where is it keeping the actual file??
+	chunks    []string
 }
 
 var self Peer
 
-// a peerclient requested to connect to this peerServer
-// but the TCP connection should have been established??
-// or maybe 2 cases 1) this is new neighbor and TCP conn is established here
-//  2. this is old neighbor w/ established TCP so this is duplicate conn (does this matter?)
+// handle a peerclient requesting to connect to this peerServer, search for the chunk
+// the peerClient requests, and either send it over or let it know that I don't have it
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
 	buf := make([]byte, 1024)
@@ -82,9 +78,9 @@ func main() {
 
 	mockNeighbor2 := Peer{
 		conn:      nil,
-		IPAddr:    net.ParseIP("127.0.0.2"), // Example IP
+		IPAddr:    net.ParseIP("127.0.0.2"),
 		neighbors: []Peer{},
-		chunks:    []string{"1"}, // Example chunks this neighbor has
+		chunks:    []string{"1"},
 	}
 
 	mockNeighbor3 := Peer{
@@ -96,10 +92,9 @@ func main() {
 
 	// initialize myself!! example
 	self = Peer{
-		IPAddr: net.ParseIP("127.0.0.4"), // Use the server's IP address
-		// chunks:  []string{"chunk1.txt", "chunk2.txt"}, // Replace with actual file names
-		chunks:    []string{"3"},                        // Replace with actual file names
-		neighbors: []Peer{mockNeighbor2, mockNeighbor3}, // This will be populated dynamically
+		IPAddr:    net.ParseIP("127.0.0.4"),
+		chunks:    []string{"3"},
+		neighbors: []Peer{mockNeighbor2, mockNeighbor3},
 	}
 
 	// should be unique for each peerServer

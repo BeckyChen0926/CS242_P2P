@@ -75,7 +75,7 @@ func handlePeerRequest(conn net.Conn) {
 	for {
 		n, err := conn.Read(buf)
 		if err != nil {
-			log.Println("Error reading from connection:", err)
+			// log.Println("Error reading from connection:", err)
 			return
 		}
 

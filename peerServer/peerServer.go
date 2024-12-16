@@ -17,7 +17,7 @@ type Peer struct {
 
 var self Peer
 
-// handle a peerclient requesting to connect to this peerServer, search for the chunk
+// handle a peerclient requesting to connect to this peerServer, search for chunks of the file
 // the peerClient requests, and either send it over or let it know that I don't have it
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
@@ -29,48 +29,56 @@ func handleConnection(conn net.Conn) {
 			return
 		}
 
-		chunkInNeed := strings.TrimSpace(string(buf[:n]))
-		fmt.Printf("Peer requested chunk: %s\n", chunkInNeed)
+		request := strings.TrimSpace(string(buf[:n]))
+		fmt.Printf("Peer requested file: %s\n", request)
 
-		if searchChunk(chunkInNeed) {
-			fmt.Printf("Chunk %s found!\nSending to peer...\n", chunkInNeed)
-			fmt.Fprintf(conn, "FOUND %s\n", chunkInNeed)
-			sendChunk(conn, chunkInNeed)
+		if strings.HasPrefix(request, "SEARCH FILE") {
+			fileName := strings.TrimPrefix(request, "SEARCH FILE ")
+			availableChunks := searchFile(fileName)
+			if len(availableChunks) > 0 {
+				fmt.Printf("File %s chunks found: %v\n", fileName, availableChunks)
+				sendChunks(conn, availableChunks)
+
+			} else {
+				fmt.Printf("File %s not found!\n", fileName)
+				conn.Write([]byte(fmt.Sprintf("FILE NOT FOUND %s\n", fileName)))
+			}
 		} else {
-			fmt.Printf("Chunk %s not available!\n", chunkInNeed)
-			fmt.Fprintf(conn, "NOT FOUND %s\n", chunkInNeed)
+			fmt.Printf("Invalid request: %s\n", request)
+			conn.Write([]byte("INVALID REQUEST\n"))
 		}
 	}
 }
 
-func searchChunk(chunkInNeed string) bool {
-	// fmt.Printf("chunk in need:%s\n", chunkInNeed)
-
+func searchFile(fileName string) []string {
+	var fileChunks []string
 	for _, chunk := range self.chunks {
-		if chunk == chunkInNeed {
-			return true
+		if strings.HasPrefix(chunk, fileName) {
+			fileChunks = append(fileChunks, chunk)
 		}
 	}
-	return false
+	return fileChunks
 }
 
-func sendChunk(conn net.Conn, chunkName string) {
+// Send available chunks of a file to the requesting peer
+func sendChunks(conn net.Conn, chunks []string) {
+	// Notify the peer that the file is available
+	conn.Write([]byte(fmt.Sprintf("FOUND FILE: %s\n", strings.Join(chunks, ","))))
 
-	filePath := fmt.Sprintf("../files/%s", chunkName)
+	for _, chunk := range chunks {
+		filePath := fmt.Sprintf("../files/%s", chunk)
 
-	// Read the chunk from dir
-	fileContent, err := os.ReadFile(filePath)
-	if err != nil {
-		fmt.Fprintf(conn, "ERROR finding chunk: %s\n", err.Error())
-		return
-	}
+		// Read the chunk from the directory
+		fileContent, err := os.ReadFile(filePath)
+		if err != nil {
+			log.Printf("Error reading chunk %s: %v\n", chunk, err)
+			conn.Write([]byte(fmt.Sprintf("ERROR READING CHUNK %s\n", chunk)))
+			continue
+		}
 
-	// Send the chunk content to the requesting peer
-	_, err = conn.Write(fileContent)
-	if err != nil {
-		log.Println("Error sending chunk:", err)
-	} else {
-		fmt.Printf("Sent chunk %s to peer\n", chunkName)
+		// Send the chunk content to the requesting peer
+		conn.Write(fileContent)
+		fmt.Printf("Sent chunk %s to peer\n", chunk)
 	}
 }
 
@@ -80,20 +88,20 @@ func main() {
 		conn:      nil,
 		IPAddr:    net.ParseIP("127.0.0.2"),
 		neighbors: []Peer{},
-		chunks:    []string{"1"},
+		chunks:    []string{"F1C1"},
 	}
 
 	mockNeighbor3 := Peer{
 		conn:      nil,
 		IPAddr:    net.ParseIP("127.0.0.3"),
 		neighbors: []Peer{},
-		chunks:    []string{"3", "2"},
+		chunks:    []string{"F1C3", "F1C2"},
 	}
 
 	// initialize myself!! example
 	self = Peer{
 		IPAddr:    net.ParseIP("127.0.0.4"),
-		chunks:    []string{"3"},
+		chunks:    []string{"F1C3"},
 		neighbors: []Peer{mockNeighbor2, mockNeighbor3},
 	}
 

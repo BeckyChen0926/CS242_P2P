@@ -52,49 +52,97 @@ func registerWithTracker(trackerAddr string) {
 	}
 }
 
-// Request a chunk from the neighbor
-func requestChunkFromNeighbor(conn net.Conn) {
-	// Get the chunk name to search for
-	reader := bufio.NewReader(os.Stdin)
-	fmt.Print("Enter chunk name to search: ")
-	chunkName, _ := reader.ReadString('\n')
-	chunkName = strings.TrimSpace(chunkName)
+// Request a file from the neighbor
+func requestFileFromNeighbor(conn net.Conn, fileName string) []string {
+	// Send the file search request
+	fmt.Fprintf(conn, "SEARCH FILE %s\n", fileName)
 
-	// Send the chunk name to the neighbor
-	_, err := fmt.Fprintf(conn, chunkName+"\n")
+	// Read response from server
+	message, err := bufio.NewReader(conn).ReadString('\n')
 	if err != nil {
-		log.Println("Error sending chunk request:", err)
+		log.Println("Error reading response from server:", err)
+		return nil
+	}
+	message = strings.TrimSpace(message)
+
+	if strings.HasPrefix(message, "FOUND FILE:") {
+		// Extract the list of chunks
+		chunks := strings.Split(strings.TrimPrefix(message, "FOUND FILE: "), ",")
+		fmt.Printf("Chunks found for file %s: %v\n", fileName, chunks)
+		return chunks
+	} else if strings.HasPrefix(message, "FILE NOT FOUND") {
+		fmt.Printf("File %s not found on peer\n", fileName)
+	} else {
+		fmt.Printf("Unexpected response: %s\n", message)
+	}
+	return nil
+}
+
+// Download chunks from the server
+func downloadChunks(conn net.Conn, chunks []string) {
+	// skip download for duplicated chunk
+	for _, chunkName := range chunks {
+		// Check if the chunk already exists in self.chunks
+		isDuplicate := false
+		for _, selfChunk := range self.chunks {
+			if selfChunk == chunkName {
+				fmt.Printf("Already have Chunk '%s'. Skipping download.\n", chunkName)
+				isDuplicate = true
+				break
+			}
+		}
+		if isDuplicate {
+			continue // Skip the rest of the loop for this chunk
+		}
+
+		// Read the chunk content from the server
+		buffer := make([]byte, 1024)
+		fileContent := strings.Builder{}
+
+		for {
+			n, err := conn.Read(buffer)
+			if err != nil {
+				if err.Error() == "EOF" {
+					break
+				}
+				log.Println("Error reading chunk:", err)
+				return
+			}
+			fileContent.Write(buffer[:n])
+			break
+		}
+
+		// Save the chunk to a file
+		filePath := fmt.Sprintf("./%s", chunkName)
+		err := os.WriteFile(filePath, []byte(fileContent.String()), 0644)
+		if err != nil {
+			log.Printf("Error saving chunk %s: %v\n", chunkName, err)
+			return
+		}
+
+		fmt.Printf("Chunk '%s' downloaded and saved to %s\n", chunkName, filePath)
+		self.chunks = append(self.chunks, chunkName)
 	}
 }
 
-// Download a chunk from the peer server
-func downloadChunk(conn net.Conn, chunkName string) {
-	// Read the chunk content from the server
-	buffer := make([]byte, 1024)
-	fileContent := strings.Builder{}
-
-	for {
-		n, err := conn.Read(buffer)
-		if err != nil {
-			if err.Error() == "EOF" {
+// Check if all required chunks for a file are downloaded
+func checkCompletion(fileName string) bool {
+	fmt.Println("My chunks: ", self.chunks)
+	expectedChunks := []string{fileName + "C1", fileName + "C2", fileName + "C3"}
+	for _, expectedChunk := range expectedChunks {
+		found := false
+		for _, selfChunk := range self.chunks {
+			if selfChunk == expectedChunk {
+				found = true
 				break
 			}
-			log.Println("Error reading chunk:", err)
-			break
 		}
-		fileContent.Write(buffer[:n])
-		break
+		if !found {
+			fmt.Printf("Missing chunk: %s\n", expectedChunk)
+			return false
+		}
 	}
-
-	// Save the chunk to a file
-	filePath := fmt.Sprintf("./%s", chunkName)
-	err := os.WriteFile(filePath, []byte(fileContent.String()), 0644)
-	if err != nil {
-		log.Println("Error saving chunk:", err)
-		return
-	}
-
-	fmt.Printf("Chunk '%s' downloaded and saved to %s\n", chunkName, filePath)
+	return false
 }
 
 /*
@@ -123,20 +171,20 @@ func main() {
 	mockNeighbor4 := Peer{
 		IPAddr:    net.ParseIP("127.0.0.4"), // mock IP
 		neighbors: []Peer{},
-		chunks:    []string{"3"}, // mock chunks this neighbor has
+		chunks:    []string{"F1C3"}, // mock chunks this neighbor has
 	}
 
 	mockNeighbor3 := Peer{
 		// conn:      nil,
 		IPAddr:    net.ParseIP("127.0.0.3"),
 		neighbors: []Peer{},
-		chunks:    []string{"3", "2"},
+		chunks:    []string{"F1C3", "F1C2"},
 	}
 
 	// Initialize self
 	self = Peer{
 		IPAddr:    net.ParseIP("127.0.0.2"),
-		chunks:    []string{"1"},
+		chunks:    []string{"F1C1"},
 		neighbors: []Peer{mockNeighbor4, mockNeighbor3},
 	}
 
@@ -154,28 +202,29 @@ func main() {
 	defer conn.Close()
 	fmt.Println("Connected to peer server at", port)
 
+	reader := bufio.NewReader(os.Stdin)
+
 	for {
-		// Request a chunk from the peer server
-		requestChunkFromNeighbor(conn)
+		// Prompt user to enter the file name they want to search for
+		fmt.Print("Enter the file name you want to search for (e.g., F1 or F2): ")
+		fileName, _ := reader.ReadString('\n')
+		fileName = strings.TrimSpace(fileName)
 
-		// Process response
-		message, err := bufio.NewReader(conn).ReadString('\n')
-		if err != nil {
-			log.Println("Error reading from server:", err)
-			break
+		if fileName == "" {
+			fmt.Println("File name cannot be empty. Please try again.")
+			continue
 		}
-		message = strings.TrimSpace(message)
 
-		// Process the response
-		if strings.HasPrefix(message, "FOUND") {
-			chunkName := strings.TrimPrefix(message, "FOUND ")
-			fmt.Printf("Chunk found: %s.\nDownloading...\n", chunkName)
-			downloadChunk(conn, chunkName)
-		} else if strings.HasPrefix(message, "NOT FOUND") {
-			chunkName := strings.TrimPrefix(message, "NOT FOUND ")
-			fmt.Printf("Chunk %s not found on peer\n", chunkName)
-		} else {
-			fmt.Printf("Unknown response: %s\n", message)
+		// Request the file from the server
+		chunks := requestFileFromNeighbor(conn, fileName)
+		if len(chunks) == 0 {
+			fmt.Printf("No chunks found for file %s. Retrying...\n", fileName)
+			continue
 		}
+
+		// Download the chunks
+		downloadChunks(conn, chunks)
+
+		checkCompletion(fileName)
 	}
 }

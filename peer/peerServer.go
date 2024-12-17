@@ -1,5 +1,6 @@
 package main
 
+/*
 import (
 	"fmt"
 	"log"
@@ -7,15 +8,6 @@ import (
 	"os"
 	"strings"
 )
-
-type Peer struct {
-	conn      net.Conn
-	IPAddr    net.IP
-	neighbors []Peer
-	chunks    []string
-}
-
-var self Peer
 
 // handle a peerclient requesting to connect to this peerServer, search for chunks of the file
 // the peerClient requests, and either send it over or let it know that I don't have it
@@ -82,49 +74,32 @@ func sendChunks(conn net.Conn, chunks []string) {
 	}
 }
 
-func main() {
+/*
+client registers and initiate search
+they receive request
+server needs to act as a client sometimes - okay to allow server to act like a client in that situation
+do this in separate thread so doesnt mess up other parts
+create a thread , act like a client
+connect to server of p2 and p3, save info at servers so 2 and 3 know 1 is its neighbor
 
-	mockNeighbor2 := Peer{
-		conn:      nil,
-		IPAddr:    net.ParseIP("127.0.0.2"),
-		neighbors: []Peer{},
-		chunks:    []string{"F1C1"},
-	}
+recommended:
+take away separation - have them be one process, go clientcode, go servercode = 2 threads, each do own processes
 
-	mockNeighbor3 := Peer{
-		conn:      nil,
-		IPAddr:    net.ParseIP("127.0.0.3"),
-		neighbors: []Peer{},
-		chunks:    []string{"F1C3", "F1C2"},
-	}
+workaround:
+save neighbor information in a file, look for the info from the file
 
-	// initialize myself!! example
-	self = Peer{
-		IPAddr:    net.ParseIP("127.0.0.4"),
-		chunks:    []string{"F1C3"},
-		neighbors: []Peer{mockNeighbor2, mockNeighbor3},
-	}
 
-	// should be unique for each peerServer
-	port := ":8004" // temporary
-	addr, err := net.ResolveTCPAddr("tcp", port)
+
+
+func GetOutboundIP() net.IP {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
 	if err != nil {
 		log.Fatal(err)
 	}
-	ln, err := net.ListenTCP("tcp", addr)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer ln.Close()
-	fmt.Println("Listening on port", port)
-	fmt.Printf("Connected neighbors: %v\n", self.neighbors)
-	fmt.Printf("Available chunks: %v\n", self.chunks)
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			log.Fatal(err)
-		}
-		go handleConnection(conn)
-	}
+	defer conn.Close()
 
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+
+	return localAddr.IP
 }
+*/

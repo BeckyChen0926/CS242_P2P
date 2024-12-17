@@ -17,25 +17,23 @@ import (
 * NOTE: we don't store any info about a peer's chunk list for privacy and to maintain true purpose of a tracker (decentralized)
  */
 type Peer struct {
-	port      string
-	IPAddr    string
-	neighbors []Peer
+	hostPort  string
+	neighbors []string
 }
 
 // Peer list that keeps track of every peer in the network
 var peerList []Peer = []Peer{}
 
 /*
-* Registers a new peer given the peer's host and port information.
+* Registers a new peer given the peer's host:port information.
 * The tracker assigns neighbors to the peer and adds this peer to its running master list of peers.
  */
-func registerPeer(host string, port string) Peer {
+func registerPeer(hostPort string) Peer {
 
 	// Create the new peer and add to the list
 	newPeer := Peer{
-		port:      port,
-		IPAddr:    host,
-		neighbors: []Peer{},
+		hostPort:  hostPort,
+		neighbors: []string{},
 	}
 	// Assign neighbors
 	assignNeighbors(&newPeer)
@@ -55,18 +53,19 @@ func assignNeighbors(p *Peer) {
 
 		// populate neighborSet
 		for _, peer := range peerList {
-			neighborSet[peer.port] = false
+			neighborSet[peer.hostPort] = false
 		}
 
 		// populate neighbor list
-		for neighborCount < len(peerList) && neighborCount < 10 {
+		maxNumPeers := 2 // Do 10 for large networks!!!!! 2 is just for ease of testing
+		for neighborCount < len(peerList) && neighborCount < maxNumPeers {
 			randomIdx := rand.Intn(len(peerList))
 			randomNeighbor := peerList[randomIdx]
 
 			// Avoid duplicate neighbors
-			if !neighborSet[randomNeighbor.port] {
-				p.neighbors = append(p.neighbors, randomNeighbor)
-				neighborSet[randomNeighbor.port] = true
+			if !neighborSet[randomNeighbor.hostPort] {
+				p.neighbors = append(p.neighbors, randomNeighbor.hostPort)
+				neighborSet[randomNeighbor.hostPort] = true
 				neighborCount++
 			}
 		}
@@ -97,18 +96,12 @@ func handlePeerRequest(conn net.Conn) {
 				log.Println("Invalid REGISTER message")
 				return
 			}
-			breakdown := strings.Split(args[2], ":")
-			peerIP := breakdown[0]
-			port := breakdown[1]
+			hostPort := args[2]
 
-			newPeer := registerPeer(peerIP, port)
+			newPeer := registerPeer(hostPort)
 
 			// Respond with neighbors
-			neighborInfos := []string{}
-			for _, neighbor := range newPeer.neighbors {
-				neighborInfos = append(neighborInfos, neighbor.IPAddr+":"+neighbor.port)
-			}
-			response := fmt.Sprintf("REGISTERED NEIGHBORS: %s\n", strings.Join(neighborInfos, ","))
+			response := fmt.Sprintf("REGISTERED NEIGHBORS: %s\n", strings.Join(newPeer.neighbors, ","))
 			conn.Write([]byte(response))
 		} else if message == "LEAVE" {
 			/*
@@ -120,7 +113,7 @@ func handlePeerRequest(conn net.Conn) {
 				connection for LEAVE message and just leave. Tracker will handle remove peer from the peer list to
 				avoid mistaking it as alive.
 			*/
-			removePeer(conn)
+			//removePeer(conn)
 			fmt.Printf("Peer left: %s\n", conn.RemoteAddr())
 		} else {
 			log.Println("message:", message)
@@ -133,19 +126,6 @@ func handlePeerRequest(conn net.Conn) {
 			return
 		}
 	}
-}
-
-/*
-* Remove a peer from the peer list
- */
-func removePeer(conn net.Conn) {
-	newPeerList := []Peer{}
-	for _, peer := range peerList {
-		if peer.IPAddr != conn.RemoteAddr().String() {
-			newPeerList = append(newPeerList, peer)
-		}
-	}
-	peerList = newPeerList
 }
 
 func main() {

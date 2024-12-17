@@ -19,13 +19,15 @@ var allFiles []string = []string{"F1", "F2", "F3", "F4", "F5"}
 * Our peer struct (for a peer) which has the following information:
 * port - port number
 * IPAddr - IP address
-* neighbors - list of the peer's direct neighbors
+* neighbors - list of the peer's direct neighbors' host:port
+* 			NOTE: a peer doesn't need to know detailed information about what chunks + neighbors its neighbor has,
+*				 hence a list of type string and not peer. It retrieves information it needs through making that TCP connection.
 * chunks - list of chunk names that the peer owns
  */
 type Peer struct {
 	port      string
 	IPAddr    string
-	neighbors []Peer
+	neighbors []string
 	chunks    []string
 }
 
@@ -36,7 +38,7 @@ var port string                            // the port number of this peer
 var self Peer = Peer{
 	port:      port,
 	IPAddr:    host,
-	neighbors: []Peer{},
+	neighbors: []string{},
 	chunks:    []string{},
 }
 
@@ -67,15 +69,18 @@ func createFolders() []string {
 	}
 
 	// Create the upload directory
+	// NOT IMPLEMENTED FOR NOW, because we arent populating in to save downloading time
 	uploadDirectory := folderName + "/upload"
-	if _, err := os.Stat(uploadDirectory); os.IsNotExist(err) {
-		err = os.MkdirAll(uploadDirectory, 0755)
-		if err != nil {
+	/*
+		if _, err := os.Stat(uploadDirectory); os.IsNotExist(err) {
+			err = os.MkdirAll(uploadDirectory, 0755)
+			if err != nil {
+				log.Fatal(err)
+			}
+		} else if err != nil {
 			log.Fatal(err)
 		}
-	} else if err != nil {
-		log.Fatal(err)
-	}
+	*/
 
 	//Create the downpload directory
 	downloadDirectory := folderName + "/download"
@@ -103,6 +108,7 @@ func peerServerThread() {
 	}
 	host := GetOutboundIP().String()
 	port = os.Args[1]
+	self.port = strings.TrimPrefix(os.Args[1], ":")
 	hostPort := host + port
 	addr, err := net.ResolveTCPAddr("tcp", hostPort)
 	if err != nil {
@@ -134,16 +140,16 @@ func peerServerThread() {
  */
 func peerClientThread() {
 
-	// Register with tracker
+	// Register with tracker & assign files
 	trackerAddr := host + ":8000"
 	if port == "" {
 		registerWithTracker(trackerAddr)
+		assignFiles()
 	}
 
 	// create folder directory, if not already created
 	args := createFolders()
 	downloadDirectory := args[1]
-	assignFiles()
 
 	reader := bufio.NewReader(os.Stdin)
 
@@ -158,42 +164,73 @@ func peerClientThread() {
 			continue
 		}
 
-		// Request the file first from our direct neighbors
-		var newChunks []string
-		if self.neighbors != nil {
-			for _, neighbor := range self.neighbors {
-				fmt.Println("starting a peer connect")
-
-				// reach out - create TCP connection with the current neighbor them to request a file
-				conn, err := net.Dial("tcp", neighbor.IPAddr+":"+neighbor.port)
-				if err != nil {
-					log.Fatal(err)
-				}
-				newChunks = requestFileFromNeighbor(conn, fileName)
-
-				if len(newChunks) != 0 {
-					fmt.Printf("Found file %s.\n", fileName)
-					// Download the chunks
-					downloadChunks(conn, newChunks, downloadDirectory)
-					break
-				}
-			}
-		}
-		if len(newChunks) == 0 {
-			//No direct neighbors have the file we need. Look deeper from our neighbors' neighbors.
-
-			// bfs
-			// chunks := completeOrForwardRequest(self, conn, fileName, 5)
+		isFileDownloaded := fullTransactionFromNeighbors(self.neighbors, fileName, downloadDirectory, 5)
+		if !isFileDownloaded {
 			fmt.Printf("No chunks found for file %s.\n", fileName)
 		}
 	}
+}
 
+/*
+* Recursive function that either successfully downloads the file wanted or doesnt (return bool)
+* We set a TTL (time to live) that tells us how many layer of BFS we would like to search
+* If a neighbor we are looking at doesn't have the file we need, we save that neighbors' neighbors in a running list
+* If no neighbor in the current layer of BFS has the file we need, we look in the next layer,
+* the current peer directly connects to the new layers' neighbors
+* if found, we download the chunk and exit the recursion returning true.
+* if the TTL runs out, we don't keep searching and assume file cannot be found.
+ */
+func fullTransactionFromNeighbors(neighbors []string, fileName string, downloadDirectory string, TTL int) bool {
+	if TTL > 0 {
+		var returnedList []string
+		var indirectNeighbors []string
+
+		// populate the original neighbors are part of the first layer, so add them as already checked
+		addedNeighborsSet := make(map[string]bool)
+		for _, neighbor := range self.neighbors {
+			addedNeighborsSet[neighbor] = true
+		}
+
+		for _, neighborHostPort := range neighbors {
+			// reach out - create TCP connection with the current neighbor them to request a file
+			conn, err := net.Dial("tcp", neighborHostPort)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			returnedList = requestFileFromNeighbor(conn, fileName)
+
+			if len(returnedList) > 0 {
+				chars := strings.Split(returnedList[0], "")
+				var firstChar string = chars[0]
+				if firstChar == "F" {
+					// returned a list of chunks
+					fmt.Printf("Found file %s.\n", fileName)
+					// Download the chunks
+					downloadChunks(conn, returnedList, downloadDirectory)
+					return true
+				} else {
+					// returned list of indirect neighbors, add these as the next layer of neighbors to explore
+					for _, currIN := range returnedList {
+						// Avoid duplicate neighbors that have already been added
+						if !addedNeighborsSet[currIN] {
+							indirectNeighbors = append(indirectNeighbors, currIN)
+							addedNeighborsSet[currIN] = true
+						}
+					}
+				}
+			}
+		}
+		if len(indirectNeighbors) > 0 {
+			return fullTransactionFromNeighbors(indirectNeighbors, fileName, downloadDirectory, TTL-1)
+		}
+	}
+	return false
 }
 
 /*
 * PEER SERVER CODE
 * Handle a peer's client thread requesting to connect to this peer's server thread
-* replies to searches for chunks of the file.
 * the peerClient requests, and either send it over or let it know that I don't have it
  */
 func handleConnection(conn net.Conn) {
@@ -207,7 +244,7 @@ func handleConnection(conn net.Conn) {
 		}
 
 		request := strings.TrimSpace(string(buf[:n]))
-		fmt.Printf("Peer requested file: %s\n", request)
+		fmt.Printf("Message: %s\n", request)
 
 		if strings.HasPrefix(request, "SEARCH FILE") {
 			fileName := strings.TrimPrefix(request, "SEARCH FILE ")
@@ -217,10 +254,18 @@ func handleConnection(conn net.Conn) {
 				sendChunks(conn, availableChunks)
 			} else {
 				fmt.Printf("File %s not found!\n", fileName)
-				conn.Write([]byte(fmt.Sprintf("FILE NOT FOUND %s\n", fileName)))
+				fmt.Println("strings.Join(self.neighbors, ", "))")
+				fmt.Println(strings.Join(self.neighbors, ","))
+				conn.Write([]byte(fmt.Sprintf("FILE NOT FOUND, SENDING NLIST: %s\n", strings.Join(self.neighbors, ","))))
 			}
 			// return a client view for this peer so they may request more files
 			go peerClientThread()
+		} else if strings.HasPrefix(request, "ADD FRIEND") {
+			friendHostPort := strings.TrimPrefix(request, "ADD FRIEND ")
+			fmt.Println("FRIENDHOSTPORT" + friendHostPort)
+			if !peerExistsInList(self.neighbors, friendHostPort) {
+				self.neighbors = append(self.neighbors, friendHostPort)
+			}
 		} else {
 			fmt.Printf("Invalid request: %s\n", request)
 			conn.Write([]byte("INVALID REQUEST\n"))
@@ -311,12 +356,7 @@ func registerWithTracker(trackerAddr string) {
 		if strings.HasPrefix(message, "REGISTERED NEIGHBORS:") {
 			neighborIPs := strings.Split(strings.TrimPrefix(message, "REGISTERED NEIGHBORS: "), ",")
 			for _, info := range neighborIPs {
-				hostAndPort := strings.Split(info, ":")
-				currHost := hostAndPort[0]
-				currPort := hostAndPort[1]
-				self.neighbors = append(self.neighbors, Peer{IPAddr: currHost, port: currPort})
-				// a peer doesn't need to know detailed information about what chunks + neighbors its neighbor has,
-				// hence the uninitialized neighbors and chunk lists. It retrieves information it needs through a TCP connection.
+				self.neighbors = append(self.neighbors, info)
 			}
 			fmt.Printf("Assigned neighbors: %v\n", self.neighbors)
 		}
@@ -345,7 +385,7 @@ func assignFiles() {
 
 /*
 * PEER CLIENT CODE
-* Request a file from the peer's direct neighbor
+* Request a file from the peer's direct neighbor & retrieve and return their neighborlist if file not found
  */
 func requestFileFromNeighbor(conn net.Conn, fileName string) []string {
 	// Send the file search request
@@ -358,53 +398,24 @@ func requestFileFromNeighbor(conn net.Conn, fileName string) []string {
 		return nil
 	}
 	message = strings.TrimSpace(message)
-	//fmt.Fprintf(conn, "Message: %s\n", message)
 	if strings.HasPrefix(message, "FOUND FILE:") {
 		// Extract the list of chunks
 		chunks := strings.Split(strings.TrimPrefix(message, "FOUND FILE: "), ",")
 		fmt.Printf("Chunks found for file %s: %v\n", fileName, chunks)
 		return chunks
-	} else if strings.HasPrefix(message, "FILE NOT FOUND") {
+	} else if strings.HasPrefix(message, "FILE NOT FOUND, SENDING NLIST:") {
 		fmt.Printf("File %s not found on peer. Searching further...\n", fileName)
-	} else {
-		fmt.Printf("Unexpected response: %s\n", message)
-	}
-	return nil
-}
-
-func completeOrForwardRequest(requesterPeer Peer, neighborConn net.Conn, fileName string, TTL int) []string {
-	if TTL >= 1 {
-		// Send the file search request
-		fmt.Fprintf(neighborConn, "SEARCH FILE %s\n", fileName)
-
-		// Read response from server
-		message, err := bufio.NewReader(neighborConn).ReadString('\n')
-		if err != nil {
-			log.Println("Error reading response from server:", err)
+		fmt.Println("message:" + message)
+		fixed := strings.TrimSpace(strings.TrimPrefix(message, "FILE NOT FOUND, SENDING NLIST:"))
+		if fixed == "" {
 			return nil
 		}
-
-		message = strings.TrimSpace(message)
-		// fmt.Fprint(neighborConn, message)
-		if strings.HasPrefix(message, "FOUND FILE:") {
-			// Extract the list of chunks
-			chunks := strings.Split(strings.TrimPrefix(message, "FOUND FILE: "), ",")
-			fmt.Printf("Chunks found for file %s: %v\n", fileName, chunks)
-			return chunks
-		} else if strings.HasPrefix(message, "FILE NOT FOUND") {
-			fmt.Printf("File %s not found on peer. Searching further...\n", fileName)
-
-			for _, neighbor := range self.neighbors {
-				// reach out - create TCP connection with them to ask
-				nextNeighborConn, err := net.Dial("tcp", neighbor.IPAddr+":"+neighbor.port)
-				if err != nil {
-					log.Fatal(err)
-				}
-				return completeOrForwardRequest(requesterPeer, nextNeighborConn, fileName, TTL-1)
-			}
-		} else {
-			fmt.Printf("Unexpected response: %s\n", message)
-		}
+		theirNeighbors := strings.Split(fixed, ",")
+		fmt.Println("theirNeighbors")
+		fmt.Println(theirNeighbors)
+		return theirNeighbors
+	} else {
+		fmt.Printf("Unexpected response: %s\n", message)
 	}
 	return nil
 }
@@ -415,6 +426,8 @@ func completeOrForwardRequest(requesterPeer Peer, neighborConn net.Conn, fileNam
 * Precondition: The server owns the chunks being downloaded.
  */
 func downloadChunks(conn net.Conn, chunks []string, downloadDirectory string) {
+	// If we are now exchanging chunks, let the providing peer add us as a direct neighbor if they havent already.
+	addFriend(conn)
 	// skip download for duplicated chunk
 	for _, chunkName := range chunks {
 		// Check if the chunk already exists in self.chunks
@@ -458,5 +471,33 @@ func downloadChunks(conn net.Conn, chunks []string, downloadDirectory string) {
 		fmt.Printf("Chunk '%s' downloaded and saved to %s\n", chunkName, filePath)
 		fmt.Println("My chunks: ", self.chunks)
 		self.chunks = append(self.chunks, chunkName)
+	}
+}
+
+/*
+* PEER CLIENT CODE (helper func)
+* function to initiate to the server that they can add this peer as a neighbor
+ */
+func addFriend(conn net.Conn) {
+	hostPort := self.IPAddr + ":" + self.port
+	fmt.Println("ADD FRIENNDNDNND " + hostPort)
+	fmt.Fprintf(conn, "ADD FRIEND %s\n", hostPort)
+	// we dont really care about the server replying, we just let them know they can add us into their neighborlist, if they want(more like if they can).
+	// best effort, if they add us successfully, YAY! Otherwise oh well.
+}
+
+/*
+* PEER SERVER CODE (helper func)
+* function to see if a given peer is already in their neighbor list
+ */
+func peerExistsInList(list []string, peer string) bool {
+	set := make(map[string]bool)
+	for _, p := range list {
+		set[p] = true
+	}
+	if !set[peer] {
+		return false
+	} else {
+		return true
 	}
 }

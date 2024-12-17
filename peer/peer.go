@@ -69,18 +69,16 @@ func createFolders() []string {
 	}
 
 	// Create the upload directory
-	// NOT IMPLEMENTED FOR NOW, because we arent populating in to save downloading time
+	// NOT IMPLEMENTED to be populated FOR NOW, so folder will be empty to save downloading time
 	uploadDirectory := folderName + "/upload"
-	/*
-		if _, err := os.Stat(uploadDirectory); os.IsNotExist(err) {
-			err = os.MkdirAll(uploadDirectory, 0755)
-			if err != nil {
-				log.Fatal(err)
-			}
-		} else if err != nil {
+	if _, err := os.Stat(uploadDirectory); os.IsNotExist(err) {
+		err = os.MkdirAll(uploadDirectory, 0755)
+		if err != nil {
 			log.Fatal(err)
 		}
-	*/
+	} else if err != nil {
+		log.Fatal(err)
+	}
 
 	//Create the downpload directory
 	downloadDirectory := folderName + "/download"

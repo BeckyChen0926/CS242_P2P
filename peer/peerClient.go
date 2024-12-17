@@ -1,25 +1,15 @@
-// becky version for testing peerServer
-
 package main
 
+/*
 import (
 	"bufio"
 	"fmt"
 	"log"
+	"math/rand"
 	"net"
 	"os"
 	"strings"
 )
-
-// Peer structure for maintaining peer information
-type Peer struct {
-	conn      net.Conn //TODO: tbh i don't think we need to initiate conn... it's the connection to this Peer
-	IPAddr    net.IP
-	neighbors []Peer
-	chunks    []string
-}
-
-var self Peer
 
 // Register the peer with the tracker
 func registerWithTracker(trackerAddr string) {
@@ -31,8 +21,9 @@ func registerWithTracker(trackerAddr string) {
 
 	// Send registration message with chunks
 	// TODO: maybe change to send ipaddr + port or something else
-	chunks := strings.Join(self.chunks, ",")
-	fmt.Fprintf(conn, "REGISTER %s\n", chunks)
+	//chunks := strings.Join(self.chunks, ",")
+
+	fmt.Fprintln(conn, "REGISTER Peer_", self.IPAddr, ":", self.port, " with chunks: ", self.chunks)
 
 	// Receive response from tracker
 	message, err := bufio.NewReader(conn).ReadString('\n')
@@ -45,10 +36,36 @@ func registerWithTracker(trackerAddr string) {
 	// Parse assigned neighbors
 	if strings.HasPrefix(message, "REGISTERED NEIGHBORS:") {
 		neighborIPs := strings.Split(strings.TrimPrefix(message, "REGISTERED NEIGHBORS: "), ",")
-		for _, ip := range neighborIPs {
-			self.neighbors = append(self.neighbors, Peer{IPAddr: net.ParseIP(ip)})
+		for _, info := range neighborIPs {
+			hostAndPort := strings.Split(info, ":")
+			currHost := hostAndPort[0]
+			currPort := hostAndPort[1]
+			self.neighbors = append(self.neighbors, Peer{IPAddr: currHost, port: currPort})
 		}
 		fmt.Printf("Assigned neighbors: %v\n", self.neighbors)
+	}
+}
+
+func assignChunks() {
+	if len(allFiles) <= 1 {
+		return // No neighbors to assign if only one peer exists
+	}
+
+	fileCount := 0
+	fileSet := make(map[string]bool)
+
+	for fileCount < 3 && fileCount < len(allFiles)-1 {
+		randomIdx := rand.Intn(len(allFiles))
+		randomFile := allFiles[randomIdx]
+
+		// Avoid self and duplicate neighbors
+		if fileSet[randomFile] {
+			continue
+		}
+
+		self.chunks = append(self.chunks, randomFile)
+		fileSet[randomFile] = true
+		fileCount++
 	}
 }
 
@@ -64,16 +81,57 @@ func requestFileFromNeighbor(conn net.Conn, fileName string) []string {
 		return nil
 	}
 	message = strings.TrimSpace(message)
-
+	fmt.Fprintf(conn, "Message: %s\n", message)
+	//
+	//call completeOrForwardRequest
+	//
 	if strings.HasPrefix(message, "FOUND FILE:") {
 		// Extract the list of chunks
 		chunks := strings.Split(strings.TrimPrefix(message, "FOUND FILE: "), ",")
 		fmt.Printf("Chunks found for file %s: %v\n", fileName, chunks)
 		return chunks
 	} else if strings.HasPrefix(message, "FILE NOT FOUND") {
-		fmt.Printf("File %s not found on peer\n", fileName)
+		fmt.Printf("File %s not found on peer. Searching further...\n", fileName)
+		// forward request to neighbors
+
 	} else {
 		fmt.Printf("Unexpected response: %s\n", message)
+	}
+	return nil
+}
+
+func completeOrForwardRequest(requesterPeer Peer, neighborConn net.Conn, fileName string, TTL int) []string {
+	if TTL >= 1 {
+		// Send the file search request
+		fmt.Fprintf(neighborConn, "SEARCH FILE %s\n", fileName)
+
+		// Read response from server
+		message, err := bufio.NewReader(neighborConn).ReadString('\n')
+		if err != nil {
+			log.Println("Error reading response from server:", err)
+			return nil
+		}
+		message = strings.TrimSpace(message)
+		fmt.Fprintf(neighborConn, "Message: %s\n", message)
+		if strings.HasPrefix(message, "FOUND FILE:") {
+			// Extract the list of chunks
+			chunks := strings.Split(strings.TrimPrefix(message, "FOUND FILE: "), ",")
+			fmt.Printf("Chunks found for file %s: %v\n", fileName, chunks)
+			return chunks
+		} else if strings.HasPrefix(message, "FILE NOT FOUND") {
+			fmt.Printf("File %s not found on peer. Searching further...\n", fileName)
+			for _, neighbor := range self.neighbors {
+
+				// reach out - create TCP connection with them to ask
+				nextNeighborConn, err := net.Dial("tcp", neighbor.IPAddr+neighbor.port)
+				if err != nil {
+					log.Fatal(err)
+				}
+				return completeOrForwardRequest(requesterPeer, nextNeighborConn, fileName, TTL-1)
+			}
+		} else {
+			fmt.Printf("Unexpected response: %s\n", message)
+		}
 	}
 	return nil
 }
@@ -145,6 +203,7 @@ func checkCompletion(fileName string) bool {
 	return false
 }
 
+*/
 /*
 	NOTE:
 
@@ -165,66 +224,3 @@ func checkCompletion(fileName string) bool {
 
 
 */
-
-func main() {
-
-	mockNeighbor4 := Peer{
-		IPAddr:    net.ParseIP("127.0.0.4"), // mock IP
-		neighbors: []Peer{},
-		chunks:    []string{"F1C3"}, // mock chunks this neighbor has
-	}
-
-	mockNeighbor3 := Peer{
-		// conn:      nil,
-		IPAddr:    net.ParseIP("127.0.0.3"),
-		neighbors: []Peer{},
-		chunks:    []string{"F1C3", "F1C2"},
-	}
-
-	// Initialize self
-	self = Peer{
-		IPAddr:    net.ParseIP("127.0.0.2"),
-		chunks:    []string{"F1C1"},
-		neighbors: []Peer{mockNeighbor4, mockNeighbor3},
-	}
-
-	// Register with tracker
-	trackerAddr := "127.0.0.1:8000"
-	registerWithTracker(trackerAddr)
-
-	port := ":8004"
-	// this should be where it established TCP conn to all it's assigned neighbors
-	// TODO: neighbor is hard coded for now
-	conn, err := net.Dial("tcp", "127.0.0.4"+port)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer conn.Close()
-	fmt.Println("Connected to peer server at", port)
-
-	reader := bufio.NewReader(os.Stdin)
-
-	for {
-		// Prompt user to enter the file name they want to search for
-		fmt.Print("Enter the file name you want to search for (e.g., F1 or F2): ")
-		fileName, _ := reader.ReadString('\n')
-		fileName = strings.TrimSpace(fileName)
-
-		if fileName == "" {
-			fmt.Println("File name cannot be empty. Please try again.")
-			continue
-		}
-
-		// Request the file from the server
-		chunks := requestFileFromNeighbor(conn, fileName)
-		if len(chunks) == 0 {
-			fmt.Printf("No chunks found for file %s. Retrying...\n", fileName)
-			continue
-		}
-
-		// Download the chunks
-		downloadChunks(conn, chunks)
-
-		checkCompletion(fileName)
-	}
-}

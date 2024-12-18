@@ -220,6 +220,7 @@ func fullTransactionFromNeighbors(neighbors []string, fileName string, downloadD
 			}
 		}
 		if len(indirectNeighbors) > 0 {
+			fmt.Println("Searching another layer deeper into the network...")
 			return fullTransactionFromNeighbors(indirectNeighbors, fileName, downloadDirectory, TTL-1)
 		}
 	}
@@ -242,7 +243,7 @@ func handleConnection(conn net.Conn) {
 		}
 
 		request := strings.TrimSpace(string(buf[:n]))
-		fmt.Printf("Message: %s\n", request)
+		fmt.Printf("Received Message: %s\n", request)
 
 		if strings.HasPrefix(request, "SEARCH FILE") {
 			fileName := strings.TrimPrefix(request, "SEARCH FILE ")
@@ -252,17 +253,15 @@ func handleConnection(conn net.Conn) {
 				sendChunks(conn, availableChunks)
 			} else {
 				fmt.Printf("File %s not found!\n", fileName)
-				fmt.Println("strings.Join(self.neighbors, ", "))")
-				fmt.Println(strings.Join(self.neighbors, ","))
 				conn.Write([]byte(fmt.Sprintf("FILE NOT FOUND, SENDING NLIST: %s\n", strings.Join(self.neighbors, ","))))
 			}
 			// return a client view for this peer so they may request more files
 			go peerClientThread()
 		} else if strings.HasPrefix(request, "ADD FRIEND") {
 			friendHostPort := strings.TrimPrefix(request, "ADD FRIEND ")
-			fmt.Println("FRIENDHOSTPORT" + friendHostPort)
 			if !peerExistsInList(self.neighbors, friendHostPort) {
 				self.neighbors = append(self.neighbors, friendHostPort)
+				fmt.Println("New neighbor " + friendHostPort + " added.")
 			}
 		} else {
 			fmt.Printf("Invalid request: %s\n", request)
@@ -403,14 +402,11 @@ func requestFileFromNeighbor(conn net.Conn, fileName string) []string {
 		return chunks
 	} else if strings.HasPrefix(message, "FILE NOT FOUND, SENDING NLIST:") {
 		fmt.Printf("File %s not found on peer. Searching further...\n", fileName)
-		fmt.Println("message:" + message)
 		fixed := strings.TrimSpace(strings.TrimPrefix(message, "FILE NOT FOUND, SENDING NLIST:"))
 		if fixed == "" {
 			return nil
 		}
 		theirNeighbors := strings.Split(fixed, ",")
-		fmt.Println("theirNeighbors")
-		fmt.Println(theirNeighbors)
 		return theirNeighbors
 	} else {
 		fmt.Printf("Unexpected response: %s\n", message)
@@ -452,7 +448,7 @@ func downloadChunks(conn net.Conn, chunks []string, downloadDirectory string) {
 					break
 				}
 				log.Println("Error reading chunk:", err)
-				return
+				break
 			}
 			fileContent.Write(buffer[:n])
 			break
@@ -474,11 +470,12 @@ func downloadChunks(conn net.Conn, chunks []string, downloadDirectory string) {
 
 /*
 * PEER CLIENT CODE (helper func)
-* function to initiate to the server that they can add this peer as a neighbor
+* function to initiate to the server that they can add this peer as a neighbor.
+* Helps peers expand their network. If a peer reaches out to another peer for a request and gets "serviced" (receives needed file)
+* the receiver of the request(the file providing peer) can now add the initiating peer as a direct neighbor.
  */
 func addFriend(conn net.Conn) {
 	hostPort := self.IPAddr + ":" + self.port
-	fmt.Println("ADD FRIENNDNDNND " + hostPort)
 	fmt.Fprintf(conn, "ADD FRIEND %s\n", hostPort)
 	// we dont really care about the server replying, we just let them know they can add us into their neighborlist, if they want(more like if they can).
 	// best effort, if they add us successfully, YAY! Otherwise oh well.

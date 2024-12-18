@@ -20,7 +20,7 @@ Install golang, and clone the repository :)
    
 4) Now you are ready to request files as prompted from each peer's terminal.
 
-### To use the project:**
+### To use the project:
 
 Some variables you can tweak for your own testing purposes:
 

@@ -29,7 +29,7 @@ In method ```tracker.go:assignNeighbors``` line 60, you may want to set ```maxNu
 In method ```peer.go:peerClientThread``` line 142, you may want to hardcode ```trackerAddr``` to a different host:port combination.
 
 ## Example Demo
-
+[Go to Drive](https://drive.google.com/file/d/1733nSCBHjfhBiM11s8NptCkWM5VuEFt0/view?usp=drive_link)
 
 ## Credits
 Completed by [Becky](https://github.com/BeckyChen0926), [Kitty](), and [Jessica](https://github.com/jessica-b-dai). 

@@ -32,6 +32,6 @@ In method ```peer.go:peerClientThread``` line 142, you may want to hardcode ```t
 [Go to Drive](https://drive.google.com/file/d/1733nSCBHjfhBiM11s8NptCkWM5VuEFt0/view?usp=drive_link)
 
 ## Credits
-Completed by [Becky](https://github.com/BeckyChen0926), [Kitty](), and [Jessica](https://github.com/jessica-b-dai). 
+Completed by [Becky](https://github.com/BeckyChen0926), [Kitty](), and [Jessica](https://github.com/jessica-b-dai). Thank you!!!
 
 

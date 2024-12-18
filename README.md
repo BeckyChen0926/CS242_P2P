@@ -31,6 +31,6 @@ In method ```peer.go:peerClientThread``` line 142, you may want to hardcode ```t
 
 
 # Credits
-Completed by [https://github.com/BeckyChen0926](Becky), [](Kitty), and [https://github.com/jessica-b-dai](Jessica). 
+Completed by [Becky](https://github.com/BeckyChen0926), [Kitty](), and [Jessica](https://github.com/jessica-b-dai). 
 
 
